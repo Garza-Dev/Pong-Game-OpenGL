@@ -24,9 +24,14 @@
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe
 *.out
 *.app
+/.vs/OpenGLTutorial/FileContentIndex
+
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+/.vs/OpenGLTutorial/v17
