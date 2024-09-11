@@ -35,24 +35,11 @@ void createWindow(GLFWwindow*& window, const char* title, unsigned int width, un
 {
 	window = glfwCreateWindow(width, height, title, NULL, NULL);
 	if (!window) {
-		cleanup();
 		return;
 	}
 
 	glfwMakeContextCurrent(window);
 	glfwSetFramebufferSizeCallback(window, frameBufferSizeCallback);
-	glViewport(0, 0, width, height);
-}
-
-// Callback for Window Size Change
-void frameBufferSizeCallback(GLFWwindow* window, int width, int height) 
-{
-	glViewport(0, 0, width, height);
-	scrWidth = width;
-	scrHeight = height;
-
-	//Update Projection Matrix
-	setOrthographicProjection(shaderProgram, 0, width, 0, height, 0.0f, 1.0f);
 }
 
 //Load GLAD Library
@@ -185,47 +172,113 @@ struct VAO {
 };
 
 //Generate VAO
-void genVAO(VAO* vao) {}
+void genVAO(VAO* vao) 
+{
+	glGenVertexArrays(1, &vao->val);
+	glBindVertexArray(vao->val);
+}
 
 //Generate Buffer of Certain Type and Set Data
 template<typename T>
-void genBufferObject(GLuint& bo, GLenum type, GLuint noElements, T* data, GLenum usage) {}
+void genBufferObject(GLuint& bo, GLenum type, GLuint noElements, T* data, GLenum usage) 
+{
+	glGenBuffers(1, &bo);
+	glBindBuffer(type, bo);
+	glBufferData(type, noElements * sizeof(T), data, usage);
+}
 
 //Update Data in Buffer Object
 template<typename T>
-void updateData(GLuint& bo, GLintptr offset, GLuint noElements, T*data) {}
+void updateData(GLuint& bo, GLintptr offset, GLuint noElements, T*data) 
+{
+	glBindBuffer(GL_ARRAY_BUFFER, bo);
+	glBufferSubData(GL_ARRAY_BUFFER, offset, noElements * sizeof(T), data);
+}
 
 //Set Attribute Pointers
 template<typename T>
-void setAttPointer(GLuint& bo, GLuint idx, GLuint size, GLenum type, GLuint stride, GLuint offset, GLuint divisor = 0) {}
+void setAttPointer(GLuint& bo, GLuint idx, GLuint size, GLenum type, GLuint stride, GLuint offset, GLuint divisor = 0) 
+{
+	glBindBuffer(GL_ARRAY_BUFFER, bo);
+	glVertexAttribPointer(idx, size, type, GL_FALSE, stride * sizeof(T), (void*)(offset * sizeof(T)));
+	glEnableVertexAttribArray(idx);
+	if (divisor > 0) {
+		//Reset idx attribute every divisor iteration through instances
+		glVertexAttribDivisor(idx, divisor);
+	}
+}
 
 //Draw VAO
-void draw(VAO vao, GLenum mode, GLuint count, GLenum type, GLint indices, GLuint instanceCount = 1) {}
+void draw(VAO vao, GLenum mode, GLuint count, GLenum type, GLint indices, GLuint instanceCount = 1) 
+{
+	glBindVertexArray(vao.val);
+	glDrawElementsInstanced(mode, count, type, (void*)indices, instanceCount);
+}
 
 //Unbind Buffer
-void unbindBuffer(GLenum type) {}
+void unbindBuffer(GLenum type) 
+{
+	glBindBuffer(type, 0);
+}
 
 //Unbind VAO
-void unbindVAO() {}
+void unbindVAO() 
+{
+	glBindVertexArray(0);
+}
 
 //Deallocate VAO/VBO Memory
-void cleanup(VAO vao) {}
+void cleanup(VAO vao) 
+{
+	glDeleteBuffers(1, &vao.posVBO);
+	glDeleteBuffers(1, &vao.offsetVBO);
+	glDeleteBuffers(1, &vao.sizeVBO);
+	glDeleteBuffers(1, &vao.EBO);
+	glDeleteVertexArrays(1, &vao.val);
+}
 
 /* - Main Loop Methods - */
 
+// Callback for Window Size Change
+void frameBufferSizeCallback(GLFWwindow* window, int width, int height)
+{
+	glViewport(0, 0, width, height);
+	scrWidth = width;
+	scrHeight = height;
+
+	//Update Projection Matrix
+	setOrthographicProjection(shaderProgram, 0, width, 0, height, 0.0f, 1.0f);
+}
+
 //Process Input
-void processInput(GLFWwindow* window) {}
+void processInput(GLFWwindow* window) 
+{
+	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+		glfwSetWindowShouldClose(window, true);
+	}
+}
 
 //Clear Screen
-void clearScreen() {}
+void clearScreen() 
+{
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
 
 //New Frame
-void newFrame(GLFWwindow* window) {}
+void newFrame(GLFWwindow* window) 
+{
+	glfwSwapBuffers(window);
+	glfwPollEvents();
+}
 
 /* - Cleanup Methods - */
 
 //Terminate GLFW
-void cleanup() {}
+void cleanup() 
+{
+	glfwTerminate();
+}
 
 int main()
 {
@@ -236,7 +289,7 @@ int main()
 	double lastFrame = 0.0;
 
 	//Initialization
-	initGLFW(3, 4);
+	initGLFW(3, 3);
 
 	//Create Window
 	GLFWwindow* window = nullptr;
@@ -248,11 +301,13 @@ int main()
 	}
 
 	//Load GLAD
-	if (!loadGLAD) {
+	if (!loadGLAD()) {
 		std::cout << "Could not initialize GLAD" << std::endl;
 		cleanup();
 		return -1;
 	}
+
+	glViewport(0, 0, scrWidth, scrHeight);
 
 	//Shaders
 	GLuint shaderProgram = genShaderProgram("main.vs", "main.fs");

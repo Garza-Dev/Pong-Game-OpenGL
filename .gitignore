@@ -35,3 +35,4 @@
 *.vcxproj.filters
 *.vcxproj.user
 /.vs/OpenGLTutorial/v17
+/.vs
