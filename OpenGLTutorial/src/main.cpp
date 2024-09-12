@@ -9,8 +9,28 @@
 // Settings
 unsigned int scrWidth = 800;
 unsigned int scrHeight = 600;
-const char* title = "Pong Game";
+const char* title = "Pong";
 GLuint shaderProgram;
+
+//Graphics Parameters
+const float PADDLE_SPEED = 175.0f;
+const float PADDLE_HEIGHT = 100.0f;
+const float PADDLE_WIDTH = 10.0f;
+const float HALF_PADDLE_HEIGHT = PADDLE_HEIGHT / 2.0f;
+const float HALF_PADDLE_WIDTH = PADDLE_WIDTH / 2.0f;
+const float BALL_DIAMETER = 16.0f;
+const float BALL_RADIUS = BALL_DIAMETER / 2.0f;
+const float PADDLE_OFFSET_BOUNDS = HALF_PADDLE_HEIGHT + BALL_RADIUS;
+
+/* - 2D Vector Structure - */
+struct vec2 {
+	float x;
+	float y;
+};
+
+//Public Offsets Arrays
+vec2 paddleOffsets[2];
+vec2 ballOffsets[1];
 
 /* - Initialization Methods - */
 
@@ -145,13 +165,12 @@ void setOrthographicProjection(int shaderProgram, float left, float right, float
 		{ 2.0f / (right - left), 0.0f, 0.0f, 0.0f },
 		{ 0.0f, 2.0f / (top - bottom), 0.0f, 0.0f },
 		{ 0.0f, 0.0f, -2.0f / (far - near), 0.0f },
-		{ -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0f },
+		{ -(right + left) / (right - left), -(top + bottom) / (top - bottom), -(far + near) / (far - near), 1.0f }
 	};
 
 	//Bind Shader
 	bindShader(shaderProgram);
 	glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, &mat[0][0]);
-
 }
 
 //Delete Shader
@@ -237,6 +256,38 @@ void cleanup(VAO vao)
 	glDeleteVertexArrays(1, &vao.val);
 }
 
+//Generate arrays for Circle Model
+void gen2DCircleArray(float*& vertices, unsigned int*& indices, unsigned int noTriangles, float radius = 0.5f) 
+{
+	vertices = new float[(noTriangles + 1) * 2];
+
+	vertices[0] = 0.0f;
+	vertices[1] = 0.0f;
+
+	indices = new unsigned int[noTriangles * 3];
+
+	float pi = 4 * atanf(1.0f);
+	float noTrianglesF = (float)noTriangles;
+	float theta = 0.0f;
+
+	for (unsigned int i = 0; i < noTriangles; i++) {
+		//Set Vertices
+		vertices[(i + 1) * 2] = radius * cosf(theta);
+		vertices[(i + 1) * 2 + 1] = radius * sinf(theta);
+		
+		//Set Indicies
+		indices[i * 3 + 0] = 0;
+		indices[i * 3 + 1] = i + 1;
+		indices[i * 3 + 2] = i + 2;
+
+		//Step up Theta
+		theta += 2 * pi / noTriangles;
+	}
+
+	//Set Last Index to Wrap around to Begining
+	indices[(noTriangles - 1) * 3 + 2] = 1;
+}
+
 /* - Main Loop Methods - */
 
 // Callback for Window Size Change
@@ -251,10 +302,40 @@ void frameBufferSizeCallback(GLFWwindow* window, int width, int height)
 }
 
 //Process Input
-void processInput(GLFWwindow* window) 
+void processInput(GLFWwindow* window, double deltaTime, vec2 *paddleOffset) 
 {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, true);
+	}
+
+	//Left Paddle
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+		//Bounds
+		if (paddleOffset[0].y < scrHeight - PADDLE_OFFSET_BOUNDS) { 
+			paddleOffset[0].y += deltaTime * PADDLE_SPEED;
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+		//Bounds
+		if (paddleOffset[0].y > PADDLE_OFFSET_BOUNDS) {
+			paddleOffset[0].y -= deltaTime * PADDLE_SPEED;
+		}	
+	}
+
+	//Right Paddle
+	if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+		//Bounds
+		if (paddleOffset[1].y < scrHeight - PADDLE_OFFSET_BOUNDS) {
+			paddleOffset[1].y += deltaTime * PADDLE_SPEED;
+		}
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+		//Bounds
+		if (paddleOffset[1].y > PADDLE_OFFSET_BOUNDS) {
+			paddleOffset[1].y -= deltaTime * PADDLE_SPEED;
+		}
 	}
 }
 
@@ -307,55 +388,93 @@ int main()
 		return -1;
 	}
 
-	glViewport(0, 0, scrWidth, scrHeight);
+	glViewport(0, 0, (float)scrWidth, (float)scrHeight);
 
 	//Shaders
 	GLuint shaderProgram = genShaderProgram("main.vs", "main.fs");
 	setOrthographicProjection(shaderProgram, 0, scrWidth, 0, scrHeight, 0.0f, 1.0f);
 
+	/* - Paddle VAOs and VBOs - */
+
 	//Setup Vertex data
-	float vertices[] = {
-		//	 x		y
-			 0.5f, 0.5f,
-			-0.5f, 0.5f,
-			-0.5f, -0.5f,
-			 0.5f, -0.5f
+	float paddleVertices[] = {
+		0.5f, 0.5f,
+		-0.5f, 0.5f,
+		-0.5f, -0.5f,
+		0.5f, -0.5f
 	};
 
 	//Setup Index Data
-	unsigned int indices[] = {
+	unsigned int paddleIndices[] = {
 		0, 1, 2, //top left trianlge
 		2, 3, 0  //bottom right triangle
 	};
 
 	//Offsets Array
-	float offsets[] = {
-		200.0f, 200.0f
-	};
+	paddleOffsets[0] = { 35.0f, scrHeight / 2.0f };
+	paddleOffsets[1] = { scrWidth - 35.0f, scrHeight / 2.0f };
 
 	//Size Array
-	float sizes[] = {
-		50.0f, 50.0f
+	vec2 paddleSizes[] = {
+		PADDLE_WIDTH, PADDLE_HEIGHT
+	};
+
+	//Setup VAO
+	VAO paddleVAO;
+	genVAO(&paddleVAO);
+
+	//Position VBO
+	genBufferObject<float>(paddleVAO.posVBO, GL_ARRAY_BUFFER, 2 * 4, paddleVertices, GL_STATIC_DRAW);
+	setAttPointer<float>(paddleVAO.posVBO, 0, 2, GL_FLOAT, 2, 0);
+
+	//Offset VBO
+	genBufferObject<vec2>(paddleVAO.offsetVBO, GL_ARRAY_BUFFER, 2, paddleOffsets, GL_DYNAMIC_DRAW);
+	setAttPointer<float>(paddleVAO.offsetVBO, 1, 2, GL_FLOAT, 2, 0, 1);
+
+	//Size VBO
+	genBufferObject<vec2>(paddleVAO.sizeVBO, GL_ARRAY_BUFFER, 1, paddleSizes, GL_STATIC_DRAW);
+	setAttPointer<float>(paddleVAO.sizeVBO, 2, 2, GL_FLOAT, 2, 0, 2);
+
+	//EBO
+	genBufferObject<GLuint>(paddleVAO.EBO, GL_ELEMENT_ARRAY_BUFFER, 2 * 4, paddleIndices, GL_STATIC_DRAW);
+
+	//Unbind VBO and VAO
+	unbindBuffer(GL_ARRAY_BUFFER);
+	unbindVAO();
+
+	/* - Ball VAOs and VBOs - */
+
+	float* ballVertices;
+	unsigned int* ballIndices;
+	unsigned int noTriangles = 50;
+	gen2DCircleArray(ballVertices, ballIndices, noTriangles, 0.5f);
+
+	//Offsets Array
+	ballOffsets[0] = { scrWidth / 2.0f, scrHeight / 2.0f };
+
+	//Size Array
+	vec2 ballSizes[] = {
+		BALL_DIAMETER, BALL_DIAMETER
 	};
 
 	//Setup VAO/VBOs
-	VAO vao;
-	genVAO(&vao);
+	VAO ballVAO;
+	genVAO(&ballVAO);
 
 	//Position VBO
-	genBufferObject<float>(vao.posVBO, GL_ARRAY_BUFFER, 2 * 4, vertices, GL_STATIC_DRAW);
-	setAttPointer<float>(vao.posVBO, 0, 2, GL_FLOAT, 2, 0);
+	genBufferObject<float>(ballVAO.posVBO, GL_ARRAY_BUFFER, 2 * (noTriangles + 1), ballVertices, GL_STATIC_DRAW);
+	setAttPointer<float>(ballVAO.posVBO, 0, 2, GL_FLOAT, 2, 0);
 	
 	//Offset VBO
-	genBufferObject<float>(vao.offsetVBO, GL_ARRAY_BUFFER, 1 * 2, offsets, GL_DYNAMIC_DRAW);
-	setAttPointer<float>(vao.offsetVBO, 1, 2, GL_FLOAT, 2, 0, 1);
+	genBufferObject<vec2>(ballVAO.offsetVBO, GL_ARRAY_BUFFER, 1, ballOffsets, GL_DYNAMIC_DRAW);
+	setAttPointer<float>(ballVAO.offsetVBO, 1, 2, GL_FLOAT, 2, 0, 1);
 
 	//Size VBO
-	genBufferObject<float>(vao.sizeVBO, GL_ARRAY_BUFFER, 1 * 2, offsets, GL_DYNAMIC_DRAW);
-	setAttPointer<float>(vao.sizeVBO, 2, 2, GL_FLOAT, 2, 0, 1);
+	genBufferObject<vec2>(ballVAO.sizeVBO, GL_ARRAY_BUFFER, 1, ballSizes, GL_STATIC_DRAW);
+	setAttPointer<float>(ballVAO.sizeVBO, 2, 2, GL_FLOAT, 2, 0, 1);
 
 	//EBO
-	genBufferObject<unsigned int>(vao.EBO, GL_ELEMENT_ARRAY_BUFFER, 3 * 2, indices, GL_STATIC_DRAW);
+	genBufferObject<unsigned int>(ballVAO.EBO, GL_ELEMENT_ARRAY_BUFFER, 3 * noTriangles, ballIndices, GL_STATIC_DRAW);
 
 	//Unbind VBO and VAO
 	unbindBuffer(GL_ARRAY_BUFFER);
@@ -369,21 +488,27 @@ int main()
 		lastFrame += deltaTime;
 
 		//Input
-		processInput(window);
+		processInput(window, deltaTime, paddleOffsets);
 
 		//Clear screen for new frame
 		clearScreen();
 
+		//Update Data
+		updateData<vec2>(paddleVAO.offsetVBO, 0, 2, paddleOffsets);
+		updateData<vec2>(ballVAO.offsetVBO, 0, 1, ballOffsets);
+
 		//Render Object
 		bindShader(shaderProgram);
-		draw(vao, GL_TRIANGLES, 3 * 2, GL_UNSIGNED_INT, 0);
+		draw(paddleVAO, GL_TRIANGLES, 3 * 2, GL_UNSIGNED_INT, 0, 2);
+		draw(ballVAO, GL_TRIANGLES, 3 * noTriangles, GL_UNSIGNED_INT, 0);
 
 		//Swap frames
 		newFrame(window);
 	}
 
 	//Cleanup Memory
-	cleanup(vao);
+	cleanup(paddleVAO);
+	cleanup(ballVAO);
 	deleteShader(shaderProgram);
 	cleanup();
 
